@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: 45 55 72;
+    --color-accent: 49 130 206;
+    --color-success: 56 161 105;
+    --color-warning: 214 158 46;
+    --color-error: 229 62 62;
+  }
+  
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-white text-text-primary antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

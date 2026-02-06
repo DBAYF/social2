@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.admin == true;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+    
+    // Profiles collection
+    match /profiles/{profileId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(profileId) || isAdmin();
+    }
+    
+    // Posts collection
+    match /posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(resource.data.author_id);
+      allow update, delete: if isOwner(resource.data.author_id) || isAdmin();
+    }
+    
+    // Comments collection
+    match /comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(resource.data.author_id);
+      allow update, delete: if isOwner(resource.data.author_id) || isAdmin();
+    }
+    
+    // Threads collection
+    match /threads/{threadId} {
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid in resource.data.member_lookup);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && 
+                      (request.auth.uid in resource.data.member_lookup);
+    }
+    
+    // Messages collection
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(resource.data.sender_id);
+      allow update: if isAuthenticated();
+    }
+    
+    // Connections collection
+    match /connections/{connectionId} {
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == resource.data.user_a || 
+                      request.auth.uid == resource.data.user_b);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && 
+                        (request.auth.uid == resource.data.user_a || 
+                         request.auth.uid == resource.data.user_b);
+    }
+    
+    // Opportunities collection
+    match /opportunities/{opportunityId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Saved opportunities collection
+    match /saved_opportunities/{savedId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Recommendations collection
+    match /recommendations/{recommendationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Reports collection
+    match /reports/{reportId} {
+      allow create: if isAuthenticated();
+      allow read, update: if isAdmin();
+    }
+  }
+}
