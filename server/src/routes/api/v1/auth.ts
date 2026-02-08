@@ -1,132 +1,101 @@
-//@ts-ignore
-import { makeResponseJson, sessionizeUser } from '@/helpers/utils';
-import { ErrorHandler } from '@/middlewares/error.middleware';
-import { IUser } from '@/schemas/UserSchema';
-import { schemas, validateBody } from '@/validations/validations';
-import { NextFunction, Request, Response, Router } from 'express';
-import passport from 'passport';
+import express from 'express';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import { AuthService } from '../../../services/authService';
 
-const router = Router({ mergeParams: true });
+const router = express.Router();
 
-//@route POST /api/v1/register
-router.post(
-    '/v1/register',
-    validateBody(schemas.registerSchema),
-    (req, res, next) => {
-        passport.authenticate('local-register', (err, user, info) => {
-            if (err) {
-                return next(err);
-            }
+// Register
+router.post('/register', async (req, res) => {
+  try {
+    const { email, password, username, fullname } = req.body;
 
-            if (user) { // if user has been successfully created
-                req.logIn(user, function (err) { // <-- Log user in
-                    if (err) {
-                        return next(err);
-                    }
-
-                    const userData = sessionizeUser(user);
-                    return res.status(200).send(makeResponseJson(userData));
-                });
-            } else {
-                next(new ErrorHandler(409, info.message));
-            }
-        })(req, res, next);
+    if (!email || !password || !username || !fullname) {
+      return res.status(400).json({ error: 'All fields are required' });
     }
-);
 
-//@route POST /api/v1/authenticate
-router.post(
-    '/v1/authenticate',
-    validateBody(schemas.loginSchema),
-    (req: Request, res: Response, next: NextFunction) => {
-        console.log('FIREED')
-        passport.authenticate('local-login', (err, user, info) => {
-            if (err) {
-                return next(err);
-            }
+    const user = await AuthService.createUser(email, password, username, fullname);
 
-            if (!user) {
-                return next(new ErrorHandler(400, info.message))
-            } else {
-                req.logIn(user, function (err) { // <-- Log user in
-                    if (err) {
-                        return next(err);
-                    }
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user.uid, email: user.email },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '7d' }
+    );
 
-                    const userData = sessionizeUser(user);
-                    return res.status(200).send(makeResponseJson({ auth: userData, user: (req.user as IUser).toUserJSON() }));
-                });
-            }
-        })(req, res, next);
-    }
-);
-
-//@route GET /api/v1/auth/facebook FACEBOOK AUTH
-router.get(
-    '/v1/auth/facebook',
-    passport.authenticate('facebook-auth', { scope: ['email', 'public_profile'] })
-);
-
-//@route GET /api/v1/auth/facebook/callback FACEBOOK AUTH CALLBACK
-router.get(
-    '/v1/auth/facebook/callback',
-    passport.authenticate('facebook-auth', {
-        failureRedirect: `${process.env.CLIENT_URL}/auth/facebook/failed`,
-        successRedirect: `${process.env.CLIENT_URL}`
-    })
-);
-
-//@route GET /api/v1/auth/github GITHUB AUTH
-router.get(
-    '/v1/auth/github',
-    passport.authenticate('github-auth')
-);
-
-//@route GET /api/v1/auth/github/callback GITHUB AUTH
-router.get(
-    '/v1/auth/github/callback',
-    passport.authenticate('github-auth', {
-        failureRedirect: `${process.env.CLIENT_URL}/auth/github/failed`,
-        successRedirect: `${process.env.CLIENT_URL}`
-    })
-);
-
-//@route GET /api/v1/auth/github GITHUB AUTH
-router.get(
-    '/v1/auth/google',
-    passport.authenticate('google-auth', { scope: ['email', 'profile'] })
-);
-
-//@route GET /api/v1/auth/github/callback GITHUB AUTH
-router.get(
-    '/v1/auth/google/callback',
-    passport.authenticate('google-auth', {
-        failureRedirect: `${process.env.CLIENT_URL}/auth/google/failed`,
-        successRedirect: `${process.env.CLIENT_URL}`
-    })
-);
-
-//@route DELETE /api/v1/logout
-router.delete('/v1/logout', (req, res, next) => {
-    try {
-        req.logOut();
-
-        res.sendStatus(200);
-    } catch (e) {
-        next(new ErrorHandler(422, 'Unable to logout. Please try again.'))
-    }
+    res.status(201).json({
+      user,
+      token,
+      message: 'User created successfully'
+    });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
-//@route GET /api/v1/checkSession
-// Check if user session exists
-router.get('/v1/check-session', (req, res, next) => {
-    if (req.isAuthenticated()) {
-        const user = sessionizeUser(req.user);
-        res.status(200).send(makeResponseJson({ auth: user, user: (req.user as IUser).toUserJSON() }));
-    } else {
-        next(new ErrorHandler(404, 'Session invalid/expired.'));
+// Login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
     }
+
+    const user = await AuthService.authenticateUser(email, password);
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user.uid, email: user.email },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      user,
+      token,
+      message: 'Login successful'
+    });
+  } catch (error: any) {
+    res.status(401).json({ error: error.message });
+  }
 });
 
+// Get current user profile
+router.get('/me', async (req, res) => {
+  try {
+    // This would use auth middleware to get user ID
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await AuthService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+// Update profile
+router.put('/profile', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const updates = req.body;
+    await AuthService.updateUserProfile(userId, updates);
+
+    res.json({ message: 'Profile updated successfully' });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 export default router;

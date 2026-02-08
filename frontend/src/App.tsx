@@ -1,79 +1,173 @@
-import { createBrowserHistory } from 'history';
-import { useEffect, useState } from "react";
-import { useDispatch } from "react-redux";
-import { Route, Router, Switch } from "react-router-dom";
-import { Slide, ToastContainer } from 'react-toastify';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { Chats } from '~/components/main';
-import { NavBar, Preloader } from "~/components/shared";
-import * as ROUTE from "~/constants/routes";
-import * as pages from '~/pages';
-import { ProtectedRoute, PublicRoute } from "~/routers";
-import { loginSuccess } from "./redux/action/authActions";
-import { checkAuthSession } from "./services/api";
-import socket from './socket/socket';
 
-export const history = createBrowserHistory();
+// Stores
+import { useAuthStore } from './stores';
+
+// Components
+import { Preloader } from './components/shared';
+import ProtectedRoute from './routers/ProtectedRoute';
+import PublicRoute from './routers/PublicRoute';
+
+// Lazy loaded pages
+const HomePage = lazy(() => import('./pages/home').then(m => ({ default: m.default })));
+const LoginPage = lazy(() => import('./pages/login'));
+const RegisterPage = lazy(() => import('./pages/register'));
+const PostPage = lazy(() => import('./pages/post'));
+const ProfilePage = lazy(() => import('./pages/profile'));
+const SearchPage = lazy(() => import('./pages/search'));
+const SuggestedPeoplePage = lazy(() => import('./pages/suggested_people'));
+const ChatPage = lazy(() => import('./pages/chat'));
+const NotFoundPage = lazy(() => import('./pages/error/PageNotFound'));
+
+// Import routes from constants
+import * as ROUTE from '~/constants/routes';
 
 function App() {
-  const [isCheckingSession, setCheckingSession] = useState(true);
-  const dispatch = useDispatch();
-  const isNotMobile = window.screen.width >= 800;
+  const { isAuthenticated, isLoading } = useAuthStore();
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { auth } = await checkAuthSession();
+  if (isLoading) {
+    return <Preloader />;
+  }
 
-        dispatch(loginSuccess(auth));
+  return (
+    <Router>
+      <Suspense fallback={<Preloader />}>
+        <Routes>
+          {/* Public routes */}
+          <Route
+            path={ROUTE.LOGIN}
+            element={
+              <PublicRoute isAuth={isAuthenticated}>
+                <LoginPage />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path={ROUTE.REGISTER}
+            element={
+              <PublicRoute isAuth={isAuthenticated}>
+                <RegisterPage />
+              </PublicRoute>
+            }
+          />
 
-        socket.on('connect', () => {
-          socket.emit('userConnect', auth.id);
-          console.log('Client connected to socket.');
-        });
+          {/* Protected routes */}
+          <Route
+            path={ROUTE.HOME}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.POST}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <PostPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.PROFILE}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.PROFILE_INFO}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.PROFILE_EDIT_INFO}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.PROFILE_FOLLOWERS}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.PROFILE_FOLLOWING}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.PROFILE_BOOKMARKS}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.SEARCH}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <SearchPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.SUGGESTED_PEOPLE}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <SuggestedPeoplePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.CHAT}
+            element={
+              <ProtectedRoute isAuth={isAuthenticated}>
+                <ChatPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path={ROUTE.SOCIAL_AUTH_FAILED}
+            element={
+              <PublicRoute isAuth={isAuthenticated}>
+                <div>Social auth failed</div>
+              </PublicRoute>
+            }
+          />
 
-        // Try to reconnect again
-        socket.on('error', function () {
-          socket.emit('userConnect', auth.id);
-        });
+          {/* 404 */}
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Suspense>
 
-        setCheckingSession(false);
-      } catch (e) {
-        console.log('ERROR', e);
-        setCheckingSession(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return isCheckingSession ? (
-    <Preloader />
-  ) : (
-    <Router history={history}>
-      <main className="relative min-h-screen">
-        <ToastContainer
-          position="bottom-left"
-          autoClose={5000}
-          transition={Slide}
-          draggable={false}
-          hideProgressBar={true}
-          bodyStyle={{ paddingLeft: '15px' }}
-        />
-        <NavBar />
-        <Switch>
-          <PublicRoute path={ROUTE.REGISTER} component={pages.Register} />
-          <PublicRoute path={ROUTE.LOGIN} component={pages.Login} />
-          <ProtectedRoute path={ROUTE.SEARCH} component={pages.Search} />
-          <Route path={ROUTE.HOME} exact render={(props: any) => <pages.Home key={Date.now()} {...props} />} />
-          <ProtectedRoute path={ROUTE.POST} component={pages.Post} />
-          <ProtectedRoute path={ROUTE.PROFILE} component={pages.Profile} />
-          <ProtectedRoute path={ROUTE.CHAT} component={pages.Chat} />
-          <ProtectedRoute path={ROUTE.SUGGESTED_PEOPLE} component={pages.SuggestedPeople} />
-          <Route path={ROUTE.SOCIAL_AUTH_FAILED} component={pages.SocialAuthFailed} />
-          <Route component={pages.PageNotFound} />
-        </Switch>
-        {isNotMobile && <Chats />}
-      </main>
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
     </Router>
   );
 }

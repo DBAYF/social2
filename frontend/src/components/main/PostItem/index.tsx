@@ -2,40 +2,60 @@ import { CommentOutlined, GlobalOutlined, LoadingOutlined, LockOutlined, UserOut
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { lazy, Suspense, useRef, useState } from 'react';
-import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
-import withAuth from '~/components/hoc/withAuth';
+import { useFeedStore, useAuthStore, useModalStore } from '~/stores';
 import { LikeButton, PostOptions } from '~/components/main';
 import { Avatar, ImageGrid } from '~/components/shared';
 import { LOGIN } from '~/constants/routes';
 import { useModal } from '~/hooks';
-import { setTargetPost } from '~/redux/action/helperActions';
-import { showModal } from '~/redux/action/modalActions';
-import { EModalType, IPost } from "~/types/types";
+import { Badge } from '~/components/ui/Badge';
+import { IPost } from "~/types/types";
 
 const Comments = lazy(() => import('~/components/main/Comments'));
 
 dayjs.extend(relativeTime);
 
 interface IProps {
-    post: IPost,
-    likeCallback: (postID: string, state: boolean, newLikeCount: number) => void;
-    isAuth: boolean;
+    post: IPost;
 }
 
-const PostItem: React.FC<IProps> = (props) => {
-    const { post, likeCallback, isAuth } = props;
+const PostItem: React.FC<IProps> = ({ post }) => {
     const [isCommentVisible, setCommentVisible] = useState(false);
     const deleteModal = useModal();
     const updateModal = useModal();
     const commentInputRef = useRef<HTMLInputElement | null>(null);
-    const dispatch = useDispatch();
+
+    const { user, isAuthenticated } = useAuthStore();
+    const { toggleLike, updatePost } = useFeedStore();
+    const { openModal } = useModalStore();
+
+    const isOwnPost = user?.id === post.author.id;
 
     const handleToggleComment = () => {
-        if (!isAuth) return;
+        if (!isAuthenticated) return;
         if (!isCommentVisible) setCommentVisible(true);
         if (commentInputRef.current) commentInputRef.current.focus();
-    }
+    };
+
+    const handleClickLikes = () => {
+        if (isAuthenticated) {
+            openModal('postLikes', { post });
+        }
+    };
+
+    const handleClickPrivacyChange = () => {
+        if (isOwnPost) {
+            openModal('editPost', { post });
+        }
+    };
+
+    const handleLikePost = () => {
+        toggleLike(post.id);
+        updatePost(post.id, {
+            isLiked: !post.isLiked,
+            likesCount: post.isLiked ? post.likesCount - 1 : post.likesCount + 1
+        });
+    };
 
     const displayLikeMetric = (likesCount: number, isLiked: boolean) => {
         const like = likesCount > 1 ? 'like' : 'likes';
@@ -52,19 +72,6 @@ const PostItem: React.FC<IProps> = (props) => {
         }
     }
 
-    const handleClickLikes = () => {
-        if (isAuth) {
-            dispatch(showModal(EModalType.POST_LIKES));
-            dispatch(setTargetPost(props.post));
-        }
-    }
-
-    const handleClickPrivacyChange = () => {
-        if (post.isOwnPost) {
-            dispatch(setTargetPost(post));
-            dispatch(showModal(EModalType.EDIT_POST));
-        }
-    }
 
     return (
         <div className="flex flex-col bg-white rounded-lg my-4 p-4 first:mt-0 shadow-lg dark:bg-indigo-1000">
@@ -82,9 +89,9 @@ const PostItem: React.FC<IProps> = (props) => {
                         <div className="flex items-center space-x-1">
                             <span className="text-sm text-gray-500">{dayjs(post.createdAt).fromNow()}</span>
                             <div
-                                className={`w-4 h-4 rounded-full flex items-center justify-center ${post.isOwnPost && 'cursor-pointer hover:bg-gray-100 dark:hover:bg-indigo-900'}`}
+                                className={`w-4 h-4 rounded-full flex items-center justify-center ${isOwnPost && 'cursor-pointer hover:bg-gray-100 dark:hover:bg-indigo-900'}`}
                                 onClick={handleClickPrivacyChange}
-                                title={post.isOwnPost ? 'Change Privacy' : ''}
+                                title={isOwnPost ? 'Change Privacy' : ''}
                             >
                                 {post.privacy === 'private'
                                     ? <LockOutlined className="text-xs text-gray-500 dark:text-white" />
@@ -96,7 +103,7 @@ const PostItem: React.FC<IProps> = (props) => {
                         </div>
                     </div>
                 </div>
-                {isAuth && (
+                {isAuthenticated && (
                     <PostOptions
                         openDeleteModal={deleteModal.openModal}
                         openUpdateModal={updateModal.openModal}
@@ -132,9 +139,9 @@ const PostItem: React.FC<IProps> = (props) => {
                 </div>
             </div>
             {/* --- LIKE/COMMENT BUTTON */}
-            {isAuth ? (
+            {isAuthenticated ? (
                 <div className="flex items-center justify-around py-2 border-t border-gray-200 dark:border-gray-800">
-                    <LikeButton postID={post.id} isLiked={post.isLiked} likeCallback={likeCallback} />
+                    <LikeButton postID={post.id} isLiked={post.isLiked} likeCallback={handleLikePost} />
                     <span
                         className="py-2 rounded-md flex items-center justify-center text-gray-700 hover:text-gray-800 700 dark:text-gray-400 dark:hover:text-white dark:hover:bg-indigo-1100 cursor-pointer hover:bg-gray-100 text-l w-2/4"
                         onClick={handleToggleComment}
@@ -149,7 +156,7 @@ const PostItem: React.FC<IProps> = (props) => {
                     </span>
                 </div>
             )}
-            {isAuth && (
+            {isAuthenticated && (
                 <Suspense fallback={<LoadingOutlined className="text-gray-800 dark:text-white" />}>
                     <Comments
                         postID={post.id}
@@ -164,4 +171,4 @@ const PostItem: React.FC<IProps> = (props) => {
     );
 };
 
-export default withAuth(PostItem);
+export default PostItem;

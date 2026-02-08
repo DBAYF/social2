@@ -1,54 +1,74 @@
 import { CloseCircleOutlined, CloseOutlined, FileImageOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import Modal from 'react-modal';
-import { useSelector } from 'react-redux';
-import { toast } from 'react-toastify';
+import { useFeedStore, useAuthStore } from '~/stores';
+import { useToast } from '~/hooks/useToast';
 import { useFileHandler } from '~/hooks';
-import { IImage, IRootReducer } from '~/types/types';
+import { IImage } from '~/types/types';
+import { POST_TYPES, POST_TYPE_LABELS } from '~/utils/constants';
 
 interface IProps {
     isOpen: boolean;
     onAfterOpen?: () => void;
     closeModal: () => void;
-    openModal: () => void;
-    dispatchCreatePost: (form: FormData) => void;
 }
 
 Modal.setAppElement('#root');
 
-const CreatePostModal: React.FC<IProps> = (props) => {
-    const [description, setDescription] = useState('');
-    const [privacy, setPrivacy] = useState('public');
-    const isLoadingCreatePost = useSelector((state: IRootReducer) => state.loading.isLoadingCreatePost);
+const CreatePostModal: React.FC<IProps> = ({ isOpen, onAfterOpen, closeModal }) => {
+    const [content, setContent] = useState('');
+    const [postType, setPostType] = useState<'intro' | 'update' | 'ask' | 'opportunity'>('update');
+    const [tags, setTags] = useState<string[]>([]);
+    const [tagInput, setTagInput] = useState('');
+    const [privacy, setPrivacy] = useState<'public' | 'members' | 'connections'>('public');
+
+    const { user } = useAuthStore();
+    const { createPost, isLoading } = useFeedStore();
+    const { success, error: showError } = useToast();
     const { imageFile, onFileChange, clearFiles, removeImage } = useFileHandler<IImage[]>('multiple', []);
 
-    const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        const val = e.target.value;
-        setDescription(val);
+    const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setContent(e.target.value);
     };
 
     const handlePrivacyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const val = e.target.value;
-        setPrivacy(val);
-    }
+        setPrivacy(e.target.value as 'public' | 'members' | 'connections');
+    };
 
-    const onSubmit = () => {
-        if (description) {
-            const formData = new FormData();
-            formData.set('description', description);
-            formData.set('privacy', privacy);
+    const addTag = () => {
+        const tag = tagInput.trim();
+        if (tag && !tags.includes(tag) && tags.length < 5) {
+            setTags([...tags, tag]);
+            setTagInput('');
+        }
+    };
 
-            if (imageFile.length !== 0) {
-                imageFile.forEach((image) => {
-                    if (image.file) formData.append('photos', image.file);
-                });
-            }
+    const removeTag = (tagToRemove: string) => {
+        setTags(tags.filter(tag => tag !== tagToRemove));
+    };
 
-            props.dispatchCreatePost(formData);
-            toast('Creating post...');
-            setDescription('');
+    const onSubmit = async () => {
+        if (!content.trim()) return;
+
+        try {
+            await createPost({
+                type: postType,
+                content: content.trim(),
+                tags,
+                visibility: privacy,
+                images: imageFile.map(img => img.url)
+            });
+
+            success('Post created successfully!');
+            setContent('');
+            setTags([]);
+            setTagInput('');
+            setPostType('update');
+            setPrivacy('public');
             clearFiles();
-            props.closeModal();
+            closeModal();
+        } catch (err) {
+            showError('Failed to create post');
         }
     };
 
@@ -71,17 +91,86 @@ const CreatePostModal: React.FC<IProps> = (props) => {
                 </div>
                 <div className="w-full laptop:w-40rem p-4 laptop:px-8">
                     <h2 className="dark:text-white">Create Post</h2>
-                    <select
-                        className="!py-1 !text-sm w-32 dark:bg-indigo-1100 dark:text-white dark:border-gray-800"
-                        id="privacy"
-                        name="privacy"
-                        onChange={handlePrivacyChange}
-                        value={privacy}
-                    >
-                        <option value="public">Public</option>
-                        <option value="follower">Follower</option>
-                        <option value="private">Only Me</option>
-                    </select>
+
+                    {/* Post Type Selector */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Post Type
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                            {POST_TYPES.map((type) => (
+                                <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => setPostType(type)}
+                                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                                        postType === type
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                                    }`}
+                                >
+                                    {POST_TYPE_LABELS[type]}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Privacy Selector */}
+                    <div className="mb-4">
+                        <select
+                            className="!py-1 !text-sm w-32 dark:bg-indigo-1100 dark:text-white dark:border-gray-800"
+                            id="privacy"
+                            name="privacy"
+                            onChange={handlePrivacyChange}
+                            value={privacy}
+                        >
+                            <option value="public">Public</option>
+                            <option value="members">Members</option>
+                            <option value="connections">Connections</option>
+                        </select>
+                    </div>
+
+                    {/* Tags */}
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Tags (optional)
+                        </label>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                            {tags.map((tag) => (
+                                <span
+                                    key={tag}
+                                    className="inline-flex items-center px-2 py-1 rounded-full text-sm bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                                >
+                                    {tag}
+                                    <button
+                                        type="button"
+                                        onClick={() => removeTag(tag)}
+                                        className="ml-1 text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100"
+                                    >
+                                        ×
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={tagInput}
+                                onChange={(e) => setTagInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                                placeholder="Add a tag..."
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                            <button
+                                type="button"
+                                onClick={addTag}
+                                disabled={!tagInput.trim()}
+                                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                                Add
+                            </button>
+                        </div>
+                    </div>
                     <br />
                     <br />
                     <div className="flex flex-col">
@@ -90,11 +179,11 @@ const CreatePostModal: React.FC<IProps> = (props) => {
                             cols={3}
                             id="post"
                             name="post"
-                            onChange={handleDescriptionChange}
+                            onChange={handleContentChange}
                             placeholder="What's on your mind?"
                             rows={3}
-                            readOnly={isLoadingCreatePost}
-                            value={description}
+                            readOnly={isLoading}
+                            value={content}
                         />
                         <div className="flex items-center">
                             {/* --- UPLOAD OPTIONS */}
@@ -105,7 +194,7 @@ const CreatePostModal: React.FC<IProps> = (props) => {
                                     hidden
                                     accept="image/*"
                                     onChange={onFileChange}
-                                    readOnly={isLoadingCreatePost}
+                                    readOnly={isLoading}
                                     id="photos"
                                 />
                                 <label
@@ -122,7 +211,17 @@ const CreatePostModal: React.FC<IProps> = (props) => {
                             </div>
                             {/* ---- POST BUTTON --- */}
                             <div className="flex justify-end">
-                                <button onClick={onSubmit} disabled={isLoadingCreatePost}>Create Post</button>
+                                <button
+                                    onClick={onSubmit}
+                                    disabled={isLoading || !content.trim()}
+                                    className={`px-4 py-2 rounded-md font-medium ${
+                                        isLoading || !content.trim()
+                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                                    }`}
+                                >
+                                    {isLoading ? 'Creating...' : 'Create Post'}
+                                </button>
                             </div>
                         </div>
                         {/*  ---- IMAGES PREVIEWS LIST ----- */}
